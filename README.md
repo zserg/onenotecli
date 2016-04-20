@@ -1,4 +1,4 @@
-# OneNote command line access tools
+# OneNote command-line access tools
 ----------
 ## Installation
 ## Authentication
@@ -36,9 +36,15 @@ print(o.sections)
 o.get_pages()
 print(o.pages)
 
-# get page content (HTML)
+# get page content (HTML) 
 o.get_pages()
-page = o.get_
+n = 1 # page number in o.pages list
+page = o.get_page_content(o.pages[n])
+
+# get page content (Markdown) 
+o.get_pages()
+n = 1 # page number in o.pages list
+page = o.get_page_content_md(o.pages[n])
 
 ```
 
@@ -46,8 +52,27 @@ page = o.get_
 
 
 ```bash
-# get all pages 
+# authentication 
+$python onenotecli.py --auth --client_id=<your-client-id> --client_secret=<your-client-secret> --redirect_url=<your-redirect-url> --scope='office.onenote wl.signin wl.offline_access'
+
+# get OneNote elemebts in tree-like view
+$python onenotecli.py --tree
+
+# print list of the all pages 
 $ python onenotecli.py -p
+
+# print list of the all pages in long format
+$ python onenotecli.py -pl
+
+# print list of the all notebooks
+$ python onenotecli.py -n
+
+# print list of the all sections
+$ python onenotecli.py -s
+
+# print content of the page 
+$ python onenotecli.py -c <page_name>
+
 
 ```
 
