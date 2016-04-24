@@ -75,5 +75,31 @@ $ python onenotecli.py -c <page_name>
 
 
 ```
+## How to create new page
+
+To create new page on OneNote Online you have to make an authentication with the scope "office.onenote_update"
+```bash
+$python onenotecli.py --auth --client_id=<your-client-id> --client_secret=<your-client-secret> --redirect_url=<your-redirect-url> --scope='office.onenote_update wl.signin wl.offline_access'
+
+# create a page with the content from file (the content has markdown format)
+$ python onenotecli.py  --create-page=<page_name> --in-section=<section_name> --from-file=<file_name>
+
+# create a page with the content from sdtin (the content has markdown format)
+$ python onenotecli.py  --create-page=<page_name> --in-section=<section_name>
+Enter page content (press CTRL-D to complete):
+# Hello, world!
+* item1 
+* item2
+CTRL-D
+Creating page...
+Page <page_name> in section Work is created successfully (201)
+
+
+
+
+```
+
+
+
 
 

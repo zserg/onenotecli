@@ -191,10 +191,13 @@ def main(args):
             print('You should give a section name to create page in (--in-section=<sec_name>)')  # noqa
         else:
             if args.file:
-                with open(args.file[0][0], 'r') as f:
+                print(args.file)
+                with open(args.file,'r') as f:
                     data = f.read()
             else:
+                print("Enter page content (press CTRL-D to complete)")
                 data = sys.stdin.read()
+            print("Creating page...")
             status = onote.create_page(args.create, args.in_section,
                                        markdown2.markdown(data))
             if status == 403:
@@ -247,6 +250,9 @@ if __name__ == '__main__':
     parser.add_argument('--in-section', dest='in_section', action='store',
                         help='section to create page in')
 
+    parser.add_argument('--from-file', dest='file', action='store',
+                        help='file to create page')
+
     parser.add_argument('--auth', dest='authorize', action='store_true',
                         help='run authorization in OneNote Online')
 
@@ -263,8 +269,6 @@ if __name__ == '__main__':
     parser.add_argument('--scope', dest='scope', action='store',
                         help='scope for authorization')
 
-    parser.add_argument(dest='file', action='append', nargs='*',
-                        help='file to create page')
 
     args = parser.parse_args()
     main(args)
