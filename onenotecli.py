@@ -4,6 +4,33 @@ import sys
 import html2text
 import logging
 import markdown2
+import tempfile
+import os
+
+
+def edit():
+    pass
+
+def backup_page(page, html):
+    pass
+
+def get_page_content_by_name(onote, name):
+    """
+    Get page content (by name) using OneNote's API
+    Args:
+        onote (OneNote) - OneNote instanse
+        name (str) - page name
+    Returns:
+        text - page content (original html format)
+    """
+    page = onote.get_item(onote.pages, 'name', name)
+    if page:
+        try:
+            return onote.get_page_content(page[0])
+        except onenote.OneNoteAPIError as e:
+            print("OneNote API Error: status code - %d" % e.status)
+    else:
+        print("Page not found")
 
 
 def main(args):
@@ -69,9 +96,14 @@ def main(args):
 
         for i in sorted(onote.pages, key=lambda x: getattr(x, to_sort)):
             if longformat:
-                print('%s %s \t[%s] (%s -> %s)' %
-                      (i.lastmod_time.strftime('%Y %b %0d %H:%M'), i.id,
-                       i.name, i.parent_entity.parent_name, i.parent_name))
+                if args.id:
+                    print('%s %s \t[%s] (%s -> %s)' %
+                          (i.lastmod_time.strftime('%Y %b %0d %H:%M'), i.id,
+                           i.name, i.parent_entity.parent_name, i.parent_name))
+                else:
+                    print('%s \t[%s] (%s -> %s)' %
+                          (i.lastmod_time.strftime('%Y %b %0d %H:%M'),
+                           i.name, i.parent_entity.parent_name, i.parent_name))
             else:
                 print(i.name)
 
@@ -84,9 +116,14 @@ def main(args):
 
         for i in sorted(onote.sections, key=lambda x: getattr(x, to_sort)):
             if longformat:
-                print('%s %s \t[%s] (%s)' %
-                      (i.lastmod_time.strftime('%Y %b %0d %H:%M'), i.id,
-                       i.name, i.parent_name))
+                if args.id:
+                    print('%s %s \t[%s] (%s)' %
+                          (i.lastmod_time.strftime('%Y %b %0d %H:%M'), i.id,
+                           i.name, i.parent_name))
+                else:
+                    print('%s \t[%s] (%s)' %
+                          (i.lastmod_time.strftime('%Y %b %0d %H:%M'),
+                           i.name, i.parent_name))
             else:
                 print(i.name)
 
@@ -198,15 +235,71 @@ def main(args):
                 print("Enter page content (press CTRL-D to complete)")
                 data = sys.stdin.read()
             print("Creating page...")
-            status = onote.create_page(args.create, args.in_section,
-                                       markdown2.markdown(data))
+            text = markdown2.markdown(data, extras=["tables"])
+            #import pdb; pdb.set_trace()
+            status = onote.create_page(args.create, args.in_section, text)
             if status == 403:
                 print('Error 403: You are not permitted to perform the reqiested operation')  # noqa
             elif status == 401:
                 print('Error 401: Authorization failed')
-            else:
+            elif status == 201:
                 print('Page %s in section %s is created successfully (%d)' %
                       (args.create, args.in_section, status))
+            else:
+                print('Error %d' % status)
+
+    """
+    Edit page content
+    """
+    if args.edit:
+        page_name = args.edit
+        page = onote.get_item(onote.pages, 'name', page_name)
+        if not page:
+            print("Page not found")
+        elif len(page)>1:
+            print("Multiple pages found")
+        else:
+            page = page[0]
+
+            try:
+                html = onote.get_page_content(page)
+            except onenote.OneNoteAPIError as e:
+                print("OneNote API Error: status code - %d" % e.status)
+            else:
+                if html:
+                    backup_page(page, html)
+                    f = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.html')
+                    f.write(html)
+                    f.close()
+                    file_mtime = os.path.getmtime(f.name)
+                    #import pdb; pdb.set_trace()
+                    os.system('%s %s' % (os.getenv('EDITOR'), f.name))
+                    if file_mtime == os.path.getmtime(f.name):
+                        print("File isn't changed")
+                    else:
+                        f = open(f.name, 'r')
+                        text = f.read()
+                        try:
+                            status = onote.delete_page(page)
+                        except onenote.OneNoteAPIError as e:
+                            print("Delete page: OneNote API Error: status code - %d" % e.status)
+                        else:
+                            section = onote.get_item(onote.sections, 'id', page.parent_id)
+                            import pdb;pdb.set_trace()
+                            if len(section) == 1:
+                                section = section[0]
+                                status = onote.create_page_in_section(page.name, section, text)
+                                print("Page Udate: status - %d"%status)
+                            else:
+                                print("Error: section isn't found")
+
+
+
+
+
+
+
+
 
     sys.exit(0)
 
@@ -231,6 +324,12 @@ if __name__ == '__main__':
 
     parser.add_argument('-c', '--page-content', dest='content', action='store',
                         help='print content of the page')
+
+    parser.add_argument('-e', '--edit', dest='edit', action='store',
+                        help='edit content of the page')
+
+    parser.add_argument('--id', dest='id', action='store_true',
+                        help='print element id in the long listing format')
 
     parser.add_argument('--html', dest='html', action='store_true',
                         help='print content of the page in HTML format')

@@ -12,6 +12,9 @@ from onenoteauth import OneNoteAuth
 BASE_URL = 'https://www.onenote.com/api/v1.0/me/notes/'
 SAVE_FILE_DEFAULT = '.onenote.save'
 
+HTTP_SUCCESS = 200
+HTTP_UNAUTH = 200
+
 PAGE_TEMPLATE = """<!DOCTYPE html>\
 <html>
   <head>
@@ -21,6 +24,10 @@ PAGE_TEMPLATE = """<!DOCTYPE html>\
   <body>%s</body>
 </html>
 """
+
+class OneNoteAPIError(Exception):
+    def __init__(self, status):
+        self.status = status
 
 
 class OEntity(object):
@@ -62,32 +69,38 @@ class OneNote(OneNoteAuth):
         self.pages = []
         self.save_file = save_file
 
-    def onenote_request(self, url, post=False, body=''):
+    def onenote_request(self, url, req_type, body=''):
         logging.info('onenote_request: url=%s' % url)
         token = self.get_token()
         if not token:
             logging.warn('get_token failed')
             return None
 
-        if post:
-            headers = {'Authorization': 'Bearer %s' % self.get_token(),
-                       'Content-Type': 'application/xhtml+xml'}
-        else:
-            headers = {'Authorization': 'Bearer %s' % self.get_token()}
-
-        logging.info('onenote_request: headers=%s' % headers)
-        if post:
+        headers = {'Authorization': 'Bearer %s' % self.get_token()}
+        if req_type == 'post':
+            headers['Content-Type'] = 'application/xhtml+xml'
             r = requests.post(url, headers=headers, data=body.encode('utf-8'))
-        else:
+        elif req_type == 'get':
             r = requests.get(url, headers=headers)
-        if r.status_code == 401:
+        elif req_type == 'delete':
+            r = requests.delete(url, headers=headers)
+        else:
+            logging.error('onenote_request: invalid request type - %s' % req_type)
+            return None
+
+        if r.status_code == requests.codes.unauthorized:
             self.handle_401()
             headers = {'Authorization': 'Bearer %s' % self.get_token()}
-            if post:
-                r = requests.post(url, headers=headers,
-                                  data=body.encode('utf-8'))
-            else:
+            if req_type == 'post':
+                headers['Content-Type'] = 'application/xhtml+xml'
+                r = requests.post(url, headers=headers, data=body.encode('utf-8'))
+            elif req_type == 'get':
                 r = requests.get(url, headers=headers)
+            elif req_type == 'delete':
+                r = requests.delete(url, headers=headers)
+            else:
+                logging.error('onenote_request: invalid request type - %s' % req_type)
+                return None
         logging.info('response=%s' % r)
         try:
             data = r.json()
@@ -109,7 +122,7 @@ class OneNote(OneNoteAuth):
         while url:
             status_code, text = self.onenote_request(url)
             logging.info("get_notebooks: response=%s" % text)
-            if status_code == 200:
+            if status_code == HTTP_SUCCESS:
                 for i in range(len(text['value'])):
                     entity = text['value'][i]
                     oe = OEntity(
@@ -139,7 +152,7 @@ class OneNote(OneNoteAuth):
         while url:
             status_code, text = self.onenote_request(url)
             logging.info("get_sections: response=%s" % text)
-            if status_code == 200:
+            if status_code == HTTP_SUCCESS:
                 for i in range(len(text['value'])):
                     entity = text['value'][i]
                     oe = OEntity(
@@ -170,7 +183,7 @@ class OneNote(OneNoteAuth):
             status_code, text = self.onenote_request(url)
             logging.info("get_pages", text)
             logging.info("get_pages: response=%s" % text)
-            if status_code == 200:
+            if status_code == HTTP_SUCCESS:
                 for i in range(len(text['value'])):
                     entity = text['value'][i]
                     logging.info("entity %s" % entity)
@@ -219,17 +232,35 @@ class OneNote(OneNoteAuth):
         self.save_structure()
 
     def get_item(self, items, attr, value):
+        """
+        Find OEntity instance by attribute value
+        Args:
+            items - list of OEntity instances (notebooks, sections or pages)
+            attr (str) - attribute name
+            value - attribute value
+        Returns:
+            List of OEntity instances
+        """
         return [i for i in items if getattr(i, attr) == value]
 
     def get_page_content(self, page):
-        '''
-        Get page content in HTML
-        '''
-        logging.info("get page content")
+        """
+        Get page content using OneNote's API
+        Args:
+            page - page OEntity instanse
+        Returns:
+            text - page content (original html format)
+        Raises:
+            OneNoteAPIError: OneNote API's status isn't HTTP_SUCCESS
+        """
+        logging.info("get_page_content")
+        #import pdb; pdb.set_trace()
         url = BASE_URL + 'pages/' + page.id + '/content'
-        status_code, text = self.onenote_request(url)
-        if status_code == 200:
+        status_code, text = self.onenote_request(url, req_type='get')
+        if status_code == HTTP_SUCCESS:
             return text
+        else:
+            raise OneNoteAPIError(status_code)
 
     def get_page_content_md(self, page):
         '''
@@ -238,8 +269,26 @@ class OneNote(OneNoteAuth):
         logging.info("get page content")
         url = BASE_URL + 'pages/' + page.id + '/content'
         status_code, text = self.onenote_request(url)
-        if status_code == 200:
+        if status_code == HTTP_SUCCESS:
             return html2text(text)
+
+    def delete_page(self, page):
+        """
+        Delete page
+        Args:
+            page - page instance
+        Returns:
+            status - http status
+        Raises:
+            OneNoteAPIError: OneNote API's status isn't HTTP_SUCCESS
+        """
+        logging.info("delete page")
+        url = BASE_URL + 'pages/' + page.id + '/'
+        status_code, text = self.onenote_request(url, req_type='delete')
+        if status_code == requests.codes.no_content:
+            return status_code
+        else:
+            raise OneNoteAPIError(status_code)
 
     def save_structure(self):
         with open(self.save_file, 'w') as f:
@@ -324,5 +373,33 @@ class OneNote(OneNoteAuth):
                                 text)
 
         status_code, text = self.onenote_request(url, post=True, body=body)
+
+        return status_code
+
+    def create_page_in_section(self, section, title, text):
+        logging.info("create_page_in_section")
+        url = BASE_URL + 'sections/' + section.id + '/pages'
+
+        body = PAGE_TEMPLATE % (title,
+                                datetime.datetime.now().isoformat(),
+                                text)
+
+        status_code, text = self.onenote_request(url, post=True, body=body)
+
+        return status_code
+
+    def delete_page(self, page):
+        """
+        Delete page
+        Args:
+            page - page OEntity instance
+        Returns:
+            True/False - deletion result
+        Raises:
+            OneNoteAPIError: OneNote API's status isn't HTTP_SUCCESS
+        """
+        logging.info("delete page")
+        url = BASE_URL + 'pages/' + page.id + '/'
+        status_code, text = self.onenote_request(url, req_type='delete')
 
         return status_code
